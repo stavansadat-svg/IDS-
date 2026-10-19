@@ -1,0 +1,48 @@
+from flask import Flask, request, jsonify
+import joblib
+import os
+import numpy as np
+
+MODEL_DIR = os.path.expanduser("~/ids_project/models")
+rf = joblib.load(os.path.join(MODEL_DIR, "random_forest.pkl"))
+iso = joblib.load(os.path.join(MODEL_DIR, "isolation_forest.pkl"))
+
+FEATURES = ["packet_count", "total_bytes", "duration", "avg_packet_size",
+            "packets_per_second", "unique_dst_ports"]
+
+app = Flask(__name__)
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    data = request.get_json()
+
+    try:
+        row = [data[f] for f in FEATURES]
+    except KeyError as e:
+        return jsonify({"error": f"Missing feature: {e}"}), 400
+
+    X = np.array(row).reshape(1, -1)
+
+    rf_pred = rf.predict(X)[0]
+    rf_proba = rf.predict_proba(X)[0]
+    rf_confidence = float(max(rf_proba))
+
+    iso_pred = iso.predict(X)[0]
+    iso_verdict = "anomaly" if iso_pred == -1 else "normal"
+
+    # Combined verdict: flag if EITHER model considers it suspicious
+    is_malicious = (rf_pred != "benign") or (iso_verdict == "anomaly")
+
+    return jsonify({
+        "random_forest_verdict": rf_pred,
+        "random_forest_confidence": round(rf_confidence, 3),
+        "isolation_forest_verdict": iso_verdict,
+        "final_verdict": "MALICIOUS" if is_malicious else "BENIGN"
+    })
+
+@app.route("/", methods=["GET"])
+def home():
+    return "IDS API is running. POST flow features to /predict"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

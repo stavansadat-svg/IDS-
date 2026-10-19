@@ -1,0 +1,6 @@
+hids-env/
+data/raw_pcaps/*.pcap
+models/*.pkl
+__pycache__/
+*.pyc
+live_log.csv
